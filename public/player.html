@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Custom Player</title>
+<style>
+  :root{--bg:#0f1114;--panel:#141517;--accent:#8a3cff;--muted:#9aa0a6;--white:#e6e6e6}
+  html,body{height:100%;margin:0;background:var(--bg);font-family:Inter, Arial, sans-serif;color:var(--white)}
+  .container{max-width:920px;margin:24px auto;padding:16px}
+  .player-box{background:linear-gradient(180deg,#0f1114,#0d0f11);border-radius:12px;padding:12px;box-shadow:0 10px 30px rgba(0,0,0,.6)}
+  .video-wrap{position:relative;border-radius:8px;overflow:hidden;background:#000;height:420px;display:flex;align-items:center;justify-content:center}
+  video, .poster {width:100%;height:100%;object-fit:cover;display:block}
+  .big-play{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:88px;height:88px;border-radius:50%;background:rgba(20,20,20,.65);display:flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 6px 20px rgba(0,0,0,.5)}
+  .big-play svg{filter:drop-shadow(0 4px 10px rgba(0,0,0,.6))}
+  .controls{display:flex;align-items:center;gap:12px;padding:12px 6px}
+  .progress{flex:1;height:8px;background:rgba(255,255,255,.06);border-radius:6px;position:relative;cursor:pointer}
+  .progress > .bar{position:absolute;left:0;top:0;height:100%;width:0;background:linear-gradient(90deg,var(--accent),#5a2bff);border-radius:6px}
+  .time{min-width:72px;text-align:left;color:var(--muted);font-size:13px}
+  .btn{background:transparent;border:0;color:var(--muted);padding:8px;border-radius:8px;cursor:pointer;font-size:14px}
+  .right-group{display:flex;gap:8px;align-items:center}
+  .small-chip{background:rgba(255,255,255,.04);padding:8px 10px;border-radius:8px;color:var(--muted);font-weight:600}
+</style>
+</head>
+<body>
+  <div class="container">
+    <div class="player-box">
+      <div class="video-wrap" id="videoWrap">
+        <video id="video" playsinline preload="metadata"></video>
+        <div class="big-play" id="bigPlay" title="Play / Pause">
+          <svg width="36" height="36" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M5 3.868v16.264c0 .854.931 1.372 1.662.95L20.4 13.98a1 1 0 0 0 0-1.86L6.662 2.918A1 1 0 0 0 5 3.868Z" fill="white"/>
+          </svg>
+        </div>
+      </div>
+
+      <div class="controls">
+        <button class="btn" id="playBtn">Play</button>
+        <div class="progress" id="progress">
+          <div class="bar" id="progressBar"></div>
+        </div>
+        <div class="time" id="timeLabel">0:00 / 0:00</div>
+        <div class="right-group">
+          <button class="btn" id="speedBtn">1x</button>
+          <div class="small-chip" id="qualityChip">720p</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+<script>
+  const params = new URLSearchParams(location.search);
+  const rawUrl = params.get('url') || '';
+  function validUrl(u){ try{ return /^https?:\/\//i.test(u) }catch(e){return false} }
+
+  const video = document.getElementById('video');
+  const bigPlay = document.getElementById('bigPlay');
+  const playBtn = document.getElementById('playBtn');
+  const progress = document.getElementById('progress');
+  const progressBar = document.getElementById('progressBar');
+  const timeLabel = document.getElementById('timeLabel');
+  const speedBtn = document.getElementById('speedBtn');
+
+  let sourceUrl = rawUrl;
+  if (!validUrl(sourceUrl)) {
+    console.warn('Invalid or missing URL. Use /player?url=VIDEO_URL');
+  } else {
+    // If CORS issue, use: sourceUrl = '/proxy?url=' + encodeURIComponent(sourceUrl);
+    if (sourceUrl.endsWith('.m3u8') && Hls.isSupported()) {
+      const hls = new Hls();
+      hls.loadSource(sourceUrl);
+      hls.attachMedia(video);
+    } else {
+      video.src = sourceUrl;
+    }
+  }
+
+  function formatTime(s){
+    if (!isFinite(s)) return '0:00';
+    const m = Math.floor(s/60), sec = Math.floor(s%60);
+    return m + ':' + (sec<10?'0':'') + sec;
+  }
+
+  video.addEventListener('loadedmetadata', ()=> { updateTime(); });
+  video.addEventListener('timeupdate', ()=> {
+    const pct = (video.currentTime / video.duration) * 100 || 0;
+    progressBar.style.width = pct + '%';
+    updateTime();
+  });
+  function updateTime(){ timeLabel.textContent = `${formatTime(video.currentTime)} / ${formatTime(video.duration)}`; }
+
+  function togglePlay(){
+    if (video.paused) { video.play(); } else { video.pause(); }
+    updatePlayUI();
+  }
+  function updatePlayUI(){
+    playBtn.textContent = video.paused ? 'Play' : 'Pause';
+    bigPlay.style.display = video.paused ? 'flex' : 'none';
+  }
+
+  bigPlay.addEventListener('click', togglePlay);
+  playBtn.addEventListener('click', togglePlay);
+  video.addEventListener('play', updatePlayUI);
+  video.addEventListener('pause', updatePlayUI);
+
+  progress.addEventListener('click', (e)=>{
+    if (!isFinite(video.duration)) return;
+    const rect = progress.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const pct = Math.max(0, Math.min(1, x / rect.width));
+    video.currentTime = pct * video.duration;
+  });
+
+  const speeds = [0.5,0.75,1,1.25,1.5,2];
+  let spIndex = 2;
+  speedBtn.addEventListener('click', ()=>{
+    spIndex = (spIndex+1) % speeds.length;
+    video.playbackRate = speeds[spIndex];
+    speedBtn.textContent = speeds[spIndex] + 'x';
+  });
+
+  updatePlayUI();
+</script>
+</body>
+</html>
